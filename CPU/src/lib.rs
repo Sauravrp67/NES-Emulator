@@ -42,11 +42,13 @@ impl CPU {
     }
 
     fn inx(&mut self) {
-        self.X_reg = self.A_Reg.wrapping_add(1);
+        self.X_reg = self.X_reg.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.X_reg);
     }
 
     fn tax(&mut self) {
         self.X_reg = self.A_Reg;
+        self.update_zero_and_negative_flags(self.X_reg);
 
     }
 
@@ -54,9 +56,10 @@ impl CPU {
         self.PC = 0;
 
         loop {
+            //This is fetching cycle
             let opcode = program[self.PC as usize];
             self.PC += 1;
-
+            //This is decoding
             match opcode {
                 0xa9 => {
                     let param = program[self.PC as usize];
@@ -65,8 +68,14 @@ impl CPU {
 
                     self.lda(param);
                 },
-                 0x00 => return,
+                0xaa => {
+                    self.tax();
+                }
+                0xe8 => self.inx(),
+                0x00 => return,
                  _ => todo!(),
+
+
             }
         }
     } 
@@ -85,5 +94,38 @@ mod tests {
         assert_eq!(cpu.A_Reg, 0x05);
         assert!(cpu.status_reg & 0b1000_0000 == 0);
 
+    }
+
+    #[test]
+    fn test_0xa9_lda_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9, 0x00, 0x00]);
+        assert!(cpu.status_reg & 0b0000_0010 == 0b10);
+    }
+    #[test]
+    fn test_0xa0_lda_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9,0xff,0x00]);
+        assert!(cpu.status_reg & 0b1000_0000 == 0b1000_0000);
+    }
+    #[test]
+    fn test_Ops_working_together() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9,0x05,0xaa,0xe8,0x00]);
+        assert_eq!(cpu.X_reg, 0x06);
+    }
+
+    #[test]
+    fn test_0xaa_TAX() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xaa,0x00]);
+        assert_eq!(cpu.A_Reg,cpu.X_reg);
+    }
+
+    #[test]
+    fn test_0xe8_overflow_x_reg() {
+        let mut cpu = CPU::new();
+        cpu.interpret(vec![0xa9,0xff,0xaa,0xe8,0xe8,0x00]);
+        assert_eq!(cpu.X_reg, 0x01);
     }
 }
