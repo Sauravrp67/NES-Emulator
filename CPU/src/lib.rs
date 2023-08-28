@@ -35,7 +35,7 @@ impl CPU {
             memory: [0;0xFFFF]
         }
     }
-
+//Instead of creating multiple memory read and write functions for 8 bit and 16 bit create a single function. Maybe use trait or maybe 
     fn mem_read(&self , address: u16) -> u8 {
         self.memory[address as usize]
     }
@@ -83,9 +83,10 @@ impl CPU {
     pub fn reset(&mut self) {
         self.A_Reg = 0;
         self.X_reg =  0;
+        self.Y_reg = 0;
         self.status_reg = 0;
         
-        self.PC = self.mem_read_16(0xfffc)
+        self.PC = self.mem_read_16(0xfffc);
     }
 
     pub fn run(&mut self) {
@@ -95,6 +96,7 @@ impl CPU {
         self.PC += 1;
 
         match opcode {
+            //Group this under one mnemonic for each opcodes
             0xA9 => {
                 self.lda(&AddressModes::immediate);
                 self.PC += 1;
@@ -127,7 +129,14 @@ impl CPU {
                 self.lda(&AddressModes::Indirect_Indexed_y);
                 self.PC += 1;
             },
-            _ => todo!(),
+            0xE8 => {
+                self.inx();
+            },
+            0xAA => {
+                self.tax();
+            },
+            0x00 => {return;},
+            _ => println!("Not this!!!"),
             
         }
     }}
@@ -174,6 +183,17 @@ impl CPU {
                 let base_address = self.mem_read_16(self.PC);
                 base_address.wrapping_add(self.Y_reg as u16)
             },
+            
+            //This is a bit tricky.
+            //                                                                        |self.PC is here|
+            //What we are trying to do is LDA ($80,x); [opcodes] = [0xa9(lda opcode), 0x80(address), 0x00(next opcode)]
+            //We ought to add 'x_register' to 80 say x is 2: so it becomes LDA ($82).... 
+            // We need 2 byte address stored at 82 and 83 cause only one byte is stored at a memory cell:
+            // lets say: |82| data: 00 (Lower Byte of address cause it is little endian)|
+            //           |23| data: 20 (higher byte of the address)|
+            // we simple do mem_read(82) (lowee byte) and mem_read(83) and combine the both using bit arthimetic to get the address of the operand
+
+
             AddressModes::Indexed_Indirect_x => {
                 let base = self.mem_read(self.PC);
                 let ptr = (base as u8).wrapping_add(self.X_reg) as u8;
@@ -181,6 +201,7 @@ impl CPU {
                 let higher_byte = self.mem_read(ptr.wrapping_add(1) as u16);
                 (higher_byte as u16) << 8 | (lower_byte as u16)
             },
+
             AddressModes::Indirect_Indexed_y => {
                 let base = self.mem_read(self.PC);
                 let lowerByte_address = self.mem_read(base as u16);
@@ -226,7 +247,7 @@ mod tests {
     fn test_LDA_immediate_load() {
         let mut cpu = CPU::new();
         let instructions = vec![0xa9,0x05, 0x00];
-        cpu.interpret(instructions);
+        cpu.load_and_run(instructions);
 
         assert_eq!(cpu.A_Reg, 0x05);
         assert!(cpu.status_reg & 0b1000_0000 == 0);
@@ -236,33 +257,33 @@ mod tests {
     #[test]
     fn test_0xa9_lda_zero_flag() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9, 0x00, 0x00]);
+        cpu.load_and_run(vec![0xa9, 0x00, 0x00]);
         assert!(cpu.status_reg & 0b0000_0010 == 0b10);
     }
     #[test]
     fn test_0xa0_lda_negative_flag() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9,0xff,0x00]);
+        cpu.load_and_run(vec![0xa9,0xff,0x00]);
         assert!(cpu.status_reg & 0b1000_0000 == 0b1000_0000);
     }
     #[test]
     fn test_Ops_working_together() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9,0x05,0xaa,0xe8,0x00]);
+        cpu.load_and_run(vec![0xa9,0x05,0xaa,0xe8,0x00]);
         assert_eq!(cpu.X_reg, 0x06);
     }
 
     #[test]
     fn test_0xaa_TAX() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xaa,0x00]);
+        cpu.load_and_run(vec![0xaa,0x00]);
         assert_eq!(cpu.A_Reg,cpu.X_reg);
     }
 
     #[test]
     fn test_0xe8_overflow_x_reg() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xa9,0xff,0xaa,0xe8,0xe8,0x00]);
+        cpu.load_and_run(vec![0xa9,0xff,0xaa,0xe8,0xe8,0x00]);
         assert_eq!(cpu.X_reg, 0x01);
     }
 }
