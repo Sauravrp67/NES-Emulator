@@ -1,22 +1,24 @@
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
 pub enum AddressModes {
     immediate,
     zero_page,
-    zeropage_x,
+    zero_page_x,
     zero_page_y,
     absolute,
     absolute_x,
     absolute_y,
-    Indirect_x,
-    Indirect_y
+    Indexed_Indirect_x,
+    Indirect_Indexed_y,
+    NonaddressingMode,  
 
 }
-
-
 
 pub struct CPU {
     //Declaring general Purpose 8 bit register
     pub A_Reg: u8,
     pub X_reg: u8,
+    pub Y_reg: u8,
     pub status_reg: u8, //8 bit status_register
     pub PC: u16, //16 bit Program Counter Register. Why 16 bit? Cause address line is 16 bit
     memory: [u8;0xFFFF] //Creating a memory space of 65535
@@ -29,11 +31,12 @@ impl CPU {
             status_reg: 0,
             PC: 0,
             X_reg: 0,
+            Y_reg: 0,
             memory: [0;0xFFFF]
         }
     }
 
-    fn mem_read(&mut self , address: u16) -> u8 {
+    fn mem_read(&self , address: u16) -> u8 {
         self.memory[address as usize]
     }
 
@@ -41,7 +44,7 @@ impl CPU {
         self.memory[address as usize] = data;
     }
 
-    fn mem_read_16(&mut self, address: u16) -> u16 {
+    fn mem_read_16(&self, address: u16) -> u16 {
         let lower_byte = self.mem_read(address) as u16;
         let higher_byte = self.mem_read(address.wrapping_add(1)) as u16;
 
@@ -112,6 +115,50 @@ impl CPU {
             self.status_reg = self.status_reg & 0b0111_1111; 
 
         }
+    }
+
+    fn get_operand_address(&self, mode : &AddressModes) -> u16 {
+
+        match mode {
+            AddressModes::immediate => self.PC,
+            AddressModes::zero_page => self.mem_read(self.PC) as u16,
+            AddressModes::zero_page_x => {
+                let pos = self.mem_read(self.PC);
+                pos.wrapping_add(self.X_reg) as u16
+            },
+            AddressModes::zero_page_y => {
+                let pos= self.mem_read(self.PC);
+                pos.wrapping_add(self.Y_reg) as u16
+            }
+            AddressModes::absolute => self.mem_read_16(self.PC),
+            AddressModes::absolute_x => {
+                let base_address = self.mem_read_16(self.PC);
+                base_address.wrapping_add(self.X_reg as u16)
+            },
+            AddressModes::absolute_y => {
+                let base_address = self.mem_read_16(self.PC);
+                base_address.wrapping_add(self.Y_reg as u16)
+            },
+            AddressModes::Indexed_Indirect_x => {
+                let base = self.mem_read(self.PC);
+                let ptr = (base as u8).wrapping_add(self.X_reg) as u8;
+                let lower_byte = self.mem_read(ptr as u16);
+                let higher_byte = self.mem_read(ptr.wrapping_add(1) as u16);
+                (higher_byte as u16) << 8 | (lower_byte as u16)
+            },
+            AddressModes::Indirect_Indexed_y => {
+                let base = self.mem_read(self.PC);
+                let lowerByte_address = self.mem_read(base as u16);
+                let higherByte_address = self.mem_read((base.wrapping_add(1)) as u16);
+                let address = (higherByte_address as u16) << 8 | (lowerByte_address as u16);
+                address.wrapping_add(self.Y_reg as u16)
+            },
+            AddressModes::NonaddressingMode => {
+                panic!("Mode {:?} is not supported",mode)
+            }
+
+        }
+
     }
 
     //LDA operation
