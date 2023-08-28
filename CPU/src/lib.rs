@@ -1,9 +1,25 @@
+pub enum AddressModes {
+    immediate,
+    zero_page,
+    zeropage_x,
+    zero_page_y,
+    absolute,
+    absolute_x,
+    absolute_y,
+    Indirect_x,
+    Indirect_y
+
+}
+
+
+
 pub struct CPU {
     //Declaring general Purpose 8 bit register
     pub A_Reg: u8,
     pub X_reg: u8,
     pub status_reg: u8, //8 bit status_register
     pub PC: u16, //16 bit Program Counter Register. Why 16 bit? Cause address line is 16 bit
+    memory: [u8;0xFFFF] //Creating a memory space of 65535
 }
 
 impl CPU {
@@ -13,8 +29,72 @@ impl CPU {
             status_reg: 0,
             PC: 0,
             X_reg: 0,
+            memory: [0;0xFFFF]
         }
     }
+
+    fn mem_read(&mut self , address: u16) -> u8 {
+        self.memory[address as usize]
+    }
+
+    fn mem_write(&mut self, address: u16, data: u8) {
+        self.memory[address as usize] = data;
+    }
+
+    fn mem_read_16(&mut self, address: u16) -> u16 {
+        let lower_byte = self.mem_read(address) as u16;
+        let higher_byte = self.mem_read(address.wrapping_add(1)) as u16;
+
+        (higher_byte << 8) | lower_byte
+
+    }
+
+    fn mem_write_16(&mut self, data: u16, address:u16) {
+        let higher_byte = (data >> 8) as u8;
+        let lower_byte = (data & 0xff) as u8;
+        self.mem_write(address, lower_byte);
+        self.mem_write(address.wrapping_add(1), higher_byte);
+
+    }
+
+    //NES platform has a special mechanism to mark where the CPU should start the execution. 
+    //Upon inserting a new cartridge, the CPU receives a special signal called "Reset interrupt" that instructs CPU to:
+    // --> Reset the state(register and flags)
+    // --> set the program counter to memory address stored at memory location 0xfffc
+
+
+
+    pub fn load_and_run(&mut self, program:Vec<u8>) {
+        self.load(program);
+        self.reset();
+        self.run()
+    }
+
+    pub fn load(&mut self, program:Vec<u8>) {
+        self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program);
+        // The program begins from 0x8000, so at memory location 0xfffc(address) the data 0x8000(address) should be stored. That is:
+        //16 bit address must be written at memory location 0xfffc
+        self.mem_write_16(0x8000, 0xfffc);
+    }
+
+    pub fn reset(&mut self) {
+        self.A_Reg = 0;
+        self.X_reg =  0;
+        self.status_reg = 0;
+        
+        self.PC = self.mem_read_16(0xfffc)
+    }
+
+    pub fn run(&mut self) {
+        
+        loop {
+        let opcode = self.mem_read(self.PC); 
+
+        self.PC += 1;
+        }
+    }
+
+
 
     fn update_zero_and_negative_flags(&mut self, current_result: u8) {
         //Setting the zero Flag
