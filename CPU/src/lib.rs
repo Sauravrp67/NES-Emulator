@@ -162,8 +162,9 @@ impl CPU {
     }
 
     //LDA operation
-    fn lda(&mut self , value: u8) {
-        self.A_Reg = value;
+    fn lda(&mut self , addressingMode: &AddressModes) {
+        let operand_address = self.get_operand_address(addressingMode);
+        self.A_Reg = self.mem_read(operand_address);
         self.update_zero_and_negative_flags(self.A_Reg);
         
     }
@@ -179,33 +180,7 @@ impl CPU {
 
     }
 
-    pub fn interpret(&mut self, program: Vec<u8>) {
-        self.PC = 0;
-
-        loop {
-            //This is fetching cycle
-            let opcode = program[self.PC as usize];
-            self.PC += 1;
-            //This is decoding
-            match opcode {
-                0xa9 => {
-                    let param = program[self.PC as usize];
-
-                    self.PC += 1;
-
-                    self.lda(param);
-                },
-                0xaa => {
-                    self.tax();
-                }
-                0xe8 => self.inx(),
-                0x00 => return,
-                 _ => todo!(),
-
-
-            }
-        }
-    } 
+   
 }
 
 #[cfg(test)]
