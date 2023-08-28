@@ -135,6 +135,15 @@ impl CPU {
             0xAA => {
                 self.tax();
             },
+            0xA2 =>  {
+                self.ldx(&AddressModes::immediate);
+                self.PC += 1;
+
+            },
+            0xA0 => {
+                self.ldy(&AddressModes::immediate);
+                self.PC += 1;
+            },
             0x00 => {return;},
             _ => println!("Not this!!!"),
             
@@ -217,7 +226,7 @@ impl CPU {
 
     }
 
-    //LDA operation
+    //Opcodes
     fn lda(&mut self , addressingMode: &AddressModes) {
         let operand_address = self.get_operand_address(addressingMode);
         self.A_Reg = self.mem_read(operand_address);
@@ -235,8 +244,17 @@ impl CPU {
         self.update_zero_and_negative_flags(self.X_reg);
 
     }
+    fn ldx(&mut self, addressingMode: &AddressModes) {
+        let operand_address = self.get_operand_address(addressingMode);
+        self.X_reg = self.mem_read(operand_address);
+        self.update_zero_and_negative_flags(self.X_reg);
+    } 
 
-   
+    fn ldy(&mut self, addressingMode: &AddressModes) {
+        let operand_address = self.get_operand_address(addressingMode);
+        self.Y_reg = self.mem_read(operand_address);
+        self.update_zero_and_negative_flags(self.Y_reg);
+    }
 }
 
 #[cfg(test)]
@@ -285,5 +303,60 @@ mod tests {
         let mut cpu = CPU::new();
         cpu.load_and_run(vec![0xa9,0xff,0xaa,0xe8,0xe8,0x00]);
         assert_eq!(cpu.X_reg, 0x01);
+    }
+
+    #[test]
+    fn test_Zero_page_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x80, 0x14);
+        cpu.load_and_run(vec![0xa5, 0x80, 0x00]);
+        assert_eq!(cpu.A_Reg, 0x14);
+    }
+
+    #[test]
+    fn test_Zero_page_X_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x82, 0x45);
+        cpu.load_and_run(vec![0xa5,0x80,0xa2, 0x02,0xb5,0x80, 0x00]);
+        assert_eq!(cpu.A_Reg, 0x45);
+    } 
+
+    #[test]
+    fn test_absolute_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x2000, 0x45);
+        cpu.load_and_run(vec![0xAD, 0x00,0x20]);
+        assert_eq!(cpu.A_Reg, 0x45);
+    }
+    #[test]
+    fn test_absolute_X_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x2001,0x45);
+        cpu.load_and_run(vec![0xa2, 0x01,0xbd, 0x00,0x20]);
+        assert_eq!(cpu.A_Reg,0x45);
+    }
+
+    #[test]
+    fn test_absolute_Y_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x2001,0x45);
+        cpu.load_and_run(vec![0xa0, 0x01,0xb9, 0x00,0x20]);
+        assert_eq!(cpu.A_Reg,0x45);
+    }
+    #[test]
+    fn test_Indexed_Indirect_X_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write_16(0x2000,0x0082);
+        cpu.mem_write(0x2000,0x45);
+        cpu.load_and_run(vec![0xa2, 0x02,0xa1, 0x80]);
+        assert_eq!(cpu.A_Reg,0x45);
+    }
+
+    #[test]
+    fn test_Indirect_Indexed_Y_LDA() {
+        let mut cpu = CPU::new();
+        cpu.mem_write_16(0x2000, 0x0080);
+        cpu.mem_write(0x2002,0x45);
+        cpu.load_and_run(vec![0xa0,0x02,0xb1,0x80,0x00])
     }
 }
