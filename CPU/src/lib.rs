@@ -92,10 +92,45 @@ impl CPU {
         
         loop {
         let opcode = self.mem_read(self.PC); 
-
         self.PC += 1;
+
+        match opcode {
+            0xA9 => {
+                self.lda(&AddressModes::immediate);
+                self.PC += 1;
+            },
+            0xA5 => {
+                self.lda(&AddressModes::zero_page);
+                self.PC += 1;
+            },
+            0xB5 => {
+                self.lda(&AddressModes::zero_page_x);
+                self.PC += 1;
+            },
+            0xAD => {
+                self.lda(&AddressModes::absolute);
+                self.PC += 2;
+            },
+            0xBD => {
+                self.lda(&AddressModes::absolute_x);
+                self.PC += 2;
+            }
+            0xB9 => {
+                self.lda(&AddressModes::absolute_y);
+                self.PC += 2;
+            },
+            0xA1 => {
+                self.lda(&AddressModes::Indexed_Indirect_x);
+                self.PC += 1;
+            },
+            0xB1 => {
+                self.lda(&AddressModes::Indirect_Indexed_y);
+                self.PC += 1;
+            },
+            _ => todo!(),
+            
         }
-    }
+    }}
 
 
 
