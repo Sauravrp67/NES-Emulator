@@ -4,10 +4,33 @@
 #[warn(non_snake_case)]
 pub mod cpu {
 
+    ///
+    ///  7 6 5 4 3 2 1 0
+    ///  N V _ B D I Z C
+    ///  | |   | | | | +--- Carry Flag
+    ///  | |   | | | +----- Zero Flag
+    ///  | |   | | +------- Interrupt Disable
+    ///  | |   | +--------- Decimal Mode (not used on NES)
+    ///  | |   +----------- Break Command
+    ///  | +--------------- Overflow Flag
+    ///  +----------------- Negative Flag
+    ///
+    bitflags!{
+        pub struct CPUflags:u8 {
+            const CARRY = 0b0000_0001;
+            const ZERO = 0b0000_0010;
+            const INTERRUPT_DISABLE = 0b0000_0100;
+            const DECIMAL_MODE = 0b0000_1000;
+            const BREAK = 0b0001_0000;
+            const BREAK2 = 0b0010_0000;
+            const OVERFLOW = 0b0100_0000;
+            const NEGATIVE = 0b1000_0000;
+        }
+    }
+   
 use crate::opcode::opcode;
 #[derive(Debug)]
 #[allow(non_camel_case_types)]
-
 pub enum AddressModes {
     immediate,
     zero_page,
@@ -21,38 +44,20 @@ pub enum AddressModes {
     NonaddressingMode,  
 
 }
+
+//Define stack memory address
+const STACK_OFFSET: u16 = 0x0100;//Length of stack from 0x0100 to 0x01ff
+const STACK_RESET: u8 = 0xfd; //this is the initial stack pointer. When a push is done, this pointer is added to stack_offset and data is stored at the address obtained from the addition 
+// and this stack_reset is decremented. When a pop is done, the stack_reset is incremented and the data is read from the address obtained from the addition of stack_offset and stack_reset
 #[warn(non_snake_case)]
-pub struct CPU {
-    //Declaring general Purpose 8 bit register
-    pub a_reg: u8,
-    pub x_reg: u8,
-    pub y_reg: u8,
-    pub status_reg: u8, //8 bit status_register
-    pub pc: u16, //16 bit Program Counter Register. Why 16 bit? Cause address line is 16 bit
-    memory: [u8;0xFFFF] //Creating a memory space of 65535
-}
-
-impl CPU {
-    pub fn new() -> Self {
-        Self {
-            a_reg: 0,
-            status_reg: 0,
-            pc: 0,
-            x_reg: 0,
-            y_reg: 0,
-            memory: [0;0xFFFF]
-        }
-    }
-//Instead of creating multiple memory read and write functions for 8 bit and 16 bit create a single function. Maybe use trait or maybe 
-    pub fn mem_read(&self , address: u16) -> u8 {
-        self.memory[address as usize]
-    }
-
-    pub fn mem_write(&mut self, address: u16, data: u8) {
-        self.memory[address as usize] = data;
-    }
-
-    pub fn mem_read_16(&self, address: u16) -> u16 {
+pub trait Mem {
+    //Traits' functions are inherently public
+    //We can't implement this two traits because, they require access to to the memory of CPU...which varies from platform to platform
+    fn mem_read(&self , address: u16) -> u8;
+    fn mem_write(&mut self, address: u16, data: u8);
+    
+    //This we can implement cause it is independent of the platform, it is just bit arthimetic that leverages the above two functions
+    fn mem_read_16(&self, address: u16) -> u16 {
         let lower_byte = self.mem_read(address) as u16;
         let higher_byte = self.mem_read(address.wrapping_add(1)) as u16;
 
@@ -60,14 +65,49 @@ impl CPU {
 
     }
 
-    pub fn mem_write_16(&mut self, data: u16, address:u16) {
+    fn mem_write_16(&mut self, data: u16, address:u16) {
         let higher_byte = (data >> 8) as u8;
         let lower_byte = (data & 0xff) as u8;
         self.mem_write(address, lower_byte);
         self.mem_write(address.wrapping_add(1), higher_byte);
 
     }
+    
+}
+pub struct CPU {
+    //Declaring general Purpose 8 bit register
+    pub a_reg: u8,
+    pub x_reg: u8,
+    pub y_reg: u8,
+    pub stack_pointer: u8,
+    pub status_reg: CPUflags, //8 bit status_register
+    pub pc: u16, //16 bit Program Counter Register. Why 16 bit? Cause address line is 16 bit
+    memory: [u8;0xFFFF] //Creating a memory space of 65535
+}
 
+impl Mem for CPU {
+    fn mem_read(&self, address:u16) -> u8 {
+        self.memory[address as usize]
+    }
+
+    fn mem_write(&mut self, address: u16, data: u8) {
+        self.memory[address as usize] = data;
+    }
+}
+
+impl CPU {
+    pub fn new() -> Self {
+        Self {
+            a_reg: 0,
+            status_reg: CPUflags::from_bits_truncate(0b100_100), // what this does is, it sets the interrupt disable and break 2 flag to 1. So initially interrupt is disabled
+            // and break 2 is enabled. 
+            pc: 0,
+            x_reg: 0,
+            y_reg: 0,
+            stack_pointer: STACK_RESET,
+            memory: [0;0xFFFF]
+        }
+    }
     //NES platform has a special mechanism to mark where the CPU should start the execution. 
     //Upon inserting a new cartridge, the CPU receives a special signal called "Reset interrupt" that instructs CPU to:
     // --> Reset the state(register and flags)
@@ -92,7 +132,7 @@ impl CPU {
         self.a_reg = 0;
         self.x_reg =  0;
         self.y_reg = 0;
-        self.status_reg = 0;
+        self.status_reg = CPUflags::from_bits_truncate(0b100_100);
         
         self.pc = self.mem_read_16(0xfffc);
     }
@@ -138,17 +178,17 @@ impl CPU {
     fn update_zero_and_negative_flags(&mut self, current_result: u8) {
         //Setting the zero Flag
         if current_result == 0 {
-            self.status_reg = self.status_reg | 0b0000_0010; // 0 flag MUST be set no matter what, and other flag unaffected, so OR operation is required
+                self.status_reg.insert(CPUflags::ZERO); // 0 flag MUST be set no matter what, and other flag unaffected, so OR operation is required
         }
         else {
-            self.status_reg = self.status_reg & 0b1111_1101;
+            self.status_reg.remove(CPUflags::ZERO);
         }
         //setting the negative flag
         if current_result & 0b1000_0000 != 0 { // check the msb of the result
-            self.status_reg = self.status_reg | 0b1000_0000; // MSB = 1, set NegativeFlag = 1
+            self.status_reg.insert(CPUflags::NEGATIVE); // MSB = 1, set NegativeFlag = 1
         }
         else {
-            self.status_reg = self.status_reg & 0b0111_1111; 
+            self.status_reg.remove(CPUflags::NEGATIVE); // MSB = 0, set NegativeFlag = 0) ; 
 
         }
     }
@@ -209,7 +249,79 @@ impl CPU {
 
     }
 
-    //Opcodes
+    //Instruction Set
+    // Arthimetic and Logical Instructions
+    fn set_register_a(&mut self, value: u8) {
+        self.a_reg = value;
+        self.update_zero_and_negative_flags(self.a_reg);
+    }
+
+    fn add_to_register_a(&mut self, data:u8) {
+        //add, check carry, check overflow
+        let temp = (self.a_reg as u16) + (data as u16) + (if self.status_reg.contains(CPUflags::CARRY) {1} else {0}) as u16;
+        self.status_reg.set(CPUflags::CARRY, temp > 0xff);
+        self.status_reg.set(CPUflags::OVERFLOW,(self.a_reg ^ data) & 0x80 == 0 && (self.a_reg ^ temp as u8) & 0x80 != 0);
+        //                                     {if a_reg and data have same sign and a_reg and temp have different sign, then overflow}
+        self.set_register_a(temp as u8); 
+
+    }
+
+    fn adc(&mut self, addressing_mode: &AddressModes) {
+        self.add_to_register_a(self.mem_read(self.get_operand_address(addressing_mode)));
+    }
+
+    fn sbc(&mut self, addressing_mode:&AddressModes) {
+        let address_operand = self.get_operand_address(addressing_mode);
+        let data = self.mem_read(address_operand);
+        self.add_to_register_a(((data as i8).wrapping_neg()).wrapping_sub(1) as u8);
+        
+    }
+
+    fn and(&mut self,addressing_mode:&AddressModes) {
+        self.set_register_a(self.a_reg & self.mem_read(self.get_operand_address(addressing_mode)));
+    }
+
+    fn eor(&mut self, addressing_mode: &AddressModes) {
+        self.set_register_a(self.a_reg ^ self.mem_read(self.get_operand_address(addressing_mode)));
+    }
+
+    fn ora(&mut self, addressing_mode: &AddressModes) {
+        self.set_register_a(self.a_reg | self.mem_read(self.get_operand_address(addressing_mode)));
+    }
+
+    fn inx(&mut self) {
+        self.x_reg = self.x_reg.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.x_reg);
+    }
+
+    fn iny(&mut self) {
+        self.y_reg = self.y_reg.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.y_reg);
+    }
+
+    fn dex(&mut self) {
+        self.x_reg = self.x_reg.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.x_reg);
+    }
+
+    fn dey(&mut self) {
+        self.y_reg = self.y_reg.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.y_reg);
+    }
+
+    fn dec(&mut self, addressing_mode:&AddressModes) {
+        let operand_address = self.get_operand_address(addressing_mode);
+        let mut data = self.mem_read(operand_address);
+        data = data.wrapping_add(1);
+        self.mem_write(operand_address, data);
+    }
+
+    //Shift and Rotate Instructions
+    //Loading and storing from memeory
+    //Flag clear
+    //Flag set
+    //Branching Instructions
+    //Stack Instructions
     fn lda(&mut self , addressing_mode: &AddressModes) {
         let operand_address = self.get_operand_address(addressing_mode);
         self.a_reg = self.mem_read(operand_address);
@@ -217,10 +329,6 @@ impl CPU {
         
     }
 
-    fn inx(&mut self) {
-        self.x_reg = self.x_reg.wrapping_add(1);
-        self.update_zero_and_negative_flags(self.x_reg);
-    }
 
     fn tax(&mut self) {
         self.x_reg = self.a_reg;
@@ -232,6 +340,7 @@ impl CPU {
         self.x_reg = self.mem_read(operand_address);
         self.update_zero_and_negative_flags(self.x_reg);
     } 
+   
 
     fn ldy(&mut self, addressing_mode: &AddressModes) {
         let operand_address = self.get_operand_address(addressing_mode);
@@ -243,7 +352,7 @@ impl CPU {
 
 #[cfg(test)]
 mod tests {
-    use super::cpu::CPU;
+    use super::cpu::*;
 
     #[test]
     fn test_lda_immediate_load() {
@@ -252,7 +361,7 @@ mod tests {
         cpu.load_and_run(instructions);
 
         assert_eq!(cpu.a_reg, 0x05);
-        assert!(cpu.status_reg & 0b1000_0000 == 0);
+        assert!(cpu.status_reg.contains(CPUflags::ZERO) == false);
 
     }
 
@@ -260,13 +369,13 @@ mod tests {
     fn test_0xa9_lda_zero_flag() {
         let mut cpu = CPU::new();
         cpu.load_and_run(vec![0xa9, 0x00, 0x00]);
-        assert!(cpu.status_reg & 0b0000_0010 == 0b10);
+        assert!(cpu.status_reg.contains(CPUflags::ZERO) == true);
     }
     #[test]
     fn test_0xa0_lda_negative_flag() {
         let mut cpu = CPU::new();
         cpu.load_and_run(vec![0xa9,0xff,0x00]);
-        assert!(cpu.status_reg & 0b1000_0000 == 0b1000_0000);
+        assert!(cpu.status_reg.contains(CPUflags::NEGATIVE) == true);
     }
     #[test]
     fn test_ops_working_together() {
@@ -343,4 +452,12 @@ mod tests {
         cpu.mem_write(0x2002,0x45);
         cpu.load_and_run(vec![0xa0,0x02,0xb1,0x80,0x00])
     }
+    // #[test]
+    // fn test_overflow_flag() {
+    //     let mut cpu = CPU::new();
+    //     cpu.a_reg = 0x7f;
+    //     cpu.add_to_register_a(0x03);
+    //     assert_eq!(cpu.a_reg, 0x82);
+    //     assert!(cpu.status_reg.contains(CPUflags::OVERFLOW) == true);
+    // }
 }
