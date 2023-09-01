@@ -2,6 +2,7 @@
 // use std::collections::HashMap;
 
 #[warn(non_snake_case)]
+
 pub mod cpu {
 
     ///
@@ -17,6 +18,7 @@ pub mod cpu {
     ///
     bitflags!{
         #[derive(PartialEq, Eq)]
+        #[derive(Clone)]
         pub struct CPUflags:u8 {
             const CARRY = 0b0000_0001;
             const ZERO = 0b0000_0010;
@@ -114,8 +116,6 @@ impl CPU {
     // --> Reset the state(register and flags)
     // --> set the program counter to memory address stored at memory location 0xfffc
 
-
-
     pub fn load_and_run(&mut self, program:Vec<u8>) {
         self.load(program);
         self.reset();
@@ -140,37 +140,306 @@ impl CPU {
 
     pub fn run(&mut self) {
         let ref  opcodes = *opcode::OPCODES_MAP;
+    
         loop {
-        let code = self.mem_read(self.pc); 
-        self.pc += 1;
-        let program_counter_state = self.pc;
-        let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized",code));
+            let code = self.mem_read(self.pc); 
+            self.pc += 1;
+            let program_counter_state = self.pc;
+            let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized",code));
 
-        match code {
-            //Group this under one mnemonic for each opcodes
-            0xA9 | 0xA5 | 0xB5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
-                self.lda(&opcode.mode);
-            },
-            0xE8 => {
-                self.inx();
-            },
-            0xAA => {
-                self.tax();
-            },
-            0xA2 | 0xa6 | 0xb6 | 0xae | 0xbe =>  {
-                self.ldx(&AddressModes::immediate);
+            match code {
+                //Group this under one mnemonic for each opcodes
+                /*LDA */
+                0xA9 | 0xA5 | 0xB5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
+                    self.lda(&opcode.mode);
+                },
+                /*ADC */
+                0x69 | 0x65 | 0x75 | 0x6d  | 0x7d | 0x79 | 0x61 | 0x71 => {
+                    self.adc(&opcode.mode);
+                },
+                /*AND */
+                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => {
+                    self.and(&opcode.mode);
+                },
+                 /* ASL */
+                0x06 | 0x16 | 0x0e | 0x1e => {
+                    self.asl(&opcode.mode);
+                },
+                /*ASL_ACCUMULATOR */
+                0x0a => {
+                    self.asl_accumulator();
+                },
+                /*BCC */
+                0x90 => {
+                    self.branch(!self.status_reg.contains(CPUflags::CARRY));
+                },
+                /*BCS */
+                0xb0 => {
+                    self.branch(self.status_reg.contains(CPUflags::CARRY));
+                },
+                /*BEQ */
+                0xf0 => {
+                    self.branch(self.status_reg.contains(CPUflags::ZERO));
+                },
 
-            },
-            0xA0 | 0xa4 | 0xb4 | 0xac | 0xbc => {
-                self.ldy(&AddressModes::immediate);
-            },
-            0x00 => {return;},
-            _ => println!("Not this!!!"),
-            
+                /*BIT */
+                0x24 | 0x2c => {
+                    self.bit(&opcode.mode);
+                },
+
+                /*BMI */
+                0x30 => {
+                    self.branch(self.status_reg.contains(CPUflags::NEGATIVE));
+                },
+
+                /*BNE */
+                0xd0 => {
+                    self.branch(!self.status_reg.contains(CPUflags::ZERO));
+                },
+
+                /*BPL */
+                0x10 => {
+                    self.branch(!self.status_reg.contains(CPUflags::NEGATIVE));
+                },
+
+                /*BRK */
+                0x00 => {
+                    return;
+                },
+
+                /*BVC */
+                0x50 => {
+                    self.branch(!self.status_reg.contains(CPUflags::OVERFLOW));
+                },
+
+                /*BVS */
+                0x70 => {
+                    self.branch(self.status_reg.contains(CPUflags::OVERFLOW));
+                },
+                /*CLC */
+                0x18 => {
+                    self.clear_flag(&CPUflags::CARRY);
+                },
+                /*CLD */
+                0xd8 => {
+                    self.clear_flag(&CPUflags::DECIMAL_MODE);
+                },
+                /*CLI */
+                0x58 => {
+                    self.clear_flag(&CPUflags::INTERRUPT_DISABLE);
+                },
+                /*CLV*/
+                0xb8 => {
+                    self.clear_flag(&CPUflags::OVERFLOW);
+                },
+                /*CMP */
+                0xc9 | 0xc5 | 0xd5 | 0xcd | 0xdd | 0xd9 | 0xc1 | 0xd1 => {
+                    self.compare(&opcode.mode, self.a_reg);
+                },
+                /*CPX */
+                0xe0 | 0xe4 | 0xec => {
+                    self.compare(&opcode.mode, self.x_reg);
+                },
+                /*CPY */
+                0xc0 | 0xc4 | 0xcc => {
+                    self.compare(&opcode.mode, self.y_reg);
+                },
+
+                /*DEC */
+                0xc6 | 0xd6 | 0xce | 0xde => {
+                    self.dec(&opcode.mode);
+                },
+                
+                /*DEX */
+                0xca => {
+                    self.dex();
+                },
+                /*DEY */
+                0x88 => {
+                    self.dey();
+                },
+                /*EOR */
+                0x49 | 0x45 | 0x55 | 0x4d | 0x5d | 0x59 | 0x41 | 0x51 => {
+                    self.eor(&opcode.mode);
+                },
+                /*INC */
+                0xe6 | 0xf6 | 0xee | 0xfe => {
+                    self.inc(&opcode.mode);
+                },
+                /*INX */
+                0xe8 => {
+                    self.inx();
+                },
+                /*INY */
+                0xc8 => {
+                    self.iny();
+                },
+                /*JMP_Absolute */
+                0x4c => {
+                    let address = self.mem_read_16(self.pc);
+                    self.pc = address;
+                },
+                /*JMP_INDIRECT */
+                0x6c => {
+                    let address = self.mem_read_16(self.pc);
+                    //let address = $30FF 
+                    //$30FF <- $80
+                    // $3100 <- $50
+                    //$3000 <- 40
+                    //the control will be passed to 4080 rather than, 5080...that is the lower byte of the address wrapped.
+                    //This is called page boundary in jumping
+
+                    let indirect_ref = if address & 0x00FF == 0x00FF {
+                        let lo = self.mem_read(address);
+                        let hi = self.mem_read(address & 0xFF00);
+                        (hi as u16) << 8 | (lo as u16)
+                    }
+                    else {
+                        self.mem_read_16(address)
+                    };
+
+                    self.pc = indirect_ref;
+                },
+                /*JSR */
+                0x20 => {
+                    self.stack_push_16(self.pc + 2 - 1);
+                    let target_address = self.mem_read_16(self.pc);
+                    self.pc = target_address;
+                },
+                /*RTS */
+                0x60 => {
+                    self.pc = self.stack_pop_16() + 1;
+                },
+
+                /*RTI */
+                0x40 => {
+                    self.status_reg = CPUflags::from_bits_truncate(self.stack_pop());
+                    self.status_reg.remove(CPUflags::BREAK);
+                    self.status_reg.insert(CPUflags::BREAK2);
+
+                    self.pc = self.stack_pop_16();
+                },
+
+                /*LDX */
+                0xa2 | 0xa6 | 0xb6 | 0xae | 0xbe => {
+                    self.ldx(&opcode.mode);
+                },
+
+                /*LDY */
+                0xa0 | 0xa4 | 0xb4 | 0xac | 0xbc => {
+                    self.ldy(&opcode.mode);
+                },
+
+                /*LSR_Accumulator */
+                0x4a => {
+                    self.lsr_accumulator();
+                },
+
+                /*LSR */
+                0x46 | 0x56 | 0x4e | 0x5e => {
+                    self.lsr(&opcode.mode);
+                },
+
+                /*NOP */
+                0xea => {
+                    //Do nothing
+                },
+
+                /*ORA */
+                0x09 | 0x05 | 0x15 | 0x0d | 0x1d | 0x19 | 0x01 | 0x11 => {
+                    self.ora(&opcode.mode);
+                },
+                /*PHA */
+                0x48 => {
+                    self.stack_push(self.a_reg);
+                },
+                /*PHP */
+                0x08 => {
+                    self.php();
+                },
+                /*pla */
+                0x68 => {
+                    self.pla();
+                },
+                /*plp */
+                0x28 => {
+                    self.plp();
+                },
+                /*ROL */
+                0x26 | 0x36 | 0x2e | 0x3e => {
+                    self.rol(&opcode.mode);
+                },
+                /*ROL_ACCUMULATO */
+                0x2a => {
+                    self.rol_accumulator();
+                },
+                /*ROR*/
+                0x66 | 0x76 | 0x6e | 0x7e => {
+                    self.ror(&opcode.mode);
+                },
+                /*ROR_Accumulator */
+                0x6a => {
+                    self.ror_accumulator();
+                },
+                /*sbc */
+                0xe9 | 0xe5 | 0xf5 | 0xed | 0xfd | 0xf9 | 0xe1 | 0xf1 => {
+                    self.sbc(&opcode.mode);
+                },
+                /*sec */
+                0x38 => {
+                    self.set_flag(&CPUflags::CARRY);
+                },
+                /*SED */
+                0xf8 => {
+                    self.set_flag(&CPUflags::DECIMAL_MODE);
+                },
+                /*SEI */
+                0x78 => {
+                    self.set_flag(&CPUflags::INTERRUPT_DISABLE);
+                },
+                /*STA */
+                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
+                    self.sta(&opcode.mode);
+                },
+                /*STX */
+                0x86 | 0x96 | 0x8e => {
+                    self.stx(&opcode.mode);
+                },
+                /*sty */
+                0x84 | 0x94 | 0x8c => {
+                    self.sty(&opcode.mode);
+                },
+                /*tax */
+                0xaa => {
+                    self.tax();
+                },
+                /*tay */
+                0xa8 => {
+                    self.tay();
+                },
+                /*tsx */
+                0xba => {
+                    self.x_reg = self.stack_pointer;
+                    self.update_zero_and_negative_flags(self.x_reg);
+                },
+                /*TXA */
+                0x8a => {
+                    self.set_register_a(self.x_reg);
+                },
+                /*TXS */
+                0x9a => {
+                    self.stack_pointer = self.x_reg;
+                    self.update_zero_and_negative_flags(self.stack_pointer);
+                },
+                /*TYA */
+                0x98 => {
+                    self.set_register_a(self.y_reg);
+                },
+                _ => todo!(),            
         }
-    if program_counter_state == self.pc {
-        self.pc += (opcode.len - 1) as u16;
-    } 
+        if program_counter_state == self.pc {
+            self.pc += (opcode.len - 1) as u16;
+        } 
     }}
 
 
@@ -332,7 +601,7 @@ impl CPU {
         if compare_with == data {
             self.status_reg.insert(CPUflags::ZERO);
         }
-        else if compare_with >= data {
+        else if compare_with > data {
             self.status_reg.insert(CPUflags::CARRY);
         }
         else {
@@ -347,10 +616,12 @@ impl CPU {
     
     fn tax(&mut self) {
         self.x_reg = self.a_reg;
+        self.update_zero_and_negative_flags(self.x_reg);
     }
 
     fn tay(&mut self) {
         self.y_reg = self.a_reg;
+        self.update_zero_and_negative_flags(self.y_reg);
     }
 
 
@@ -404,6 +675,26 @@ impl CPU {
         let higher_byte = self.stack_pop();
         (higher_byte as u16) << 8 | (lower_byte as u16)
     }
+
+    fn php(&mut self) {
+        let mut status_register = self.status_reg.clone();
+        status_register.insert(CPUflags::BREAK);
+        status_register.insert(CPUflags::BREAK2);
+        self.stack_push(status_register.bits());
+        
+    }
+
+    fn pla(&mut self) {
+        let data = self.stack_pop();
+        self.set_register_a(data);
+    }
+
+    fn plp(&mut self) {
+        self.status_reg = CPUflags::from_bits(self.stack_pop()).unwrap();
+        self.status_reg.remove(CPUflags::BREAK);
+        self.status_reg.insert(CPUflags::BREAK2);
+    }
+
     //Flags
     pub fn set_flag(&mut self, flag: &CPUflags) {
         match *flag {
@@ -601,11 +892,6 @@ impl CPU {
         self.status_reg.set(CPUflags::NEGATIVE, data & 0b1000_0000 == 1);
         self.status_reg.set(CPUflags::OVERFLOW, data & 0b0100_0000 > 0);
     }
-
-
-
-   
-
 }
 }
 

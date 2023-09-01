@@ -26,8 +26,9 @@ impl OpCode {
 lazy_static! {
 
 
-    //static data structures that are computed at runtime, rather than compile time, and are initialized lazily.
+    //static data structures are computed at runtime, rather than compile time, and are initialized lazily.
     //This is particularly useful for cases where you want to initialize complex data structures only when they are first used. 
+    //This optimizes the size of program file
     static ref OP_CODES:Vec<OpCode> =  
     vec![
     //Implied Addressing Mode OpCodes
