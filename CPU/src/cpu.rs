@@ -123,10 +123,10 @@ impl CPU {
     }
 
     pub fn load(&mut self, program:Vec<u8>) {
-        self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program);
+        self.memory[0x0600 .. (0x0600 + program.len())].copy_from_slice(&program);
         // The program begins from 0x8000, so at memory location 0xfffc(address) the data 0x8000(address) should be stored. That is:
         //16 bit address must be written at memory location 0xfffc
-        self.mem_write_16(0x8000, 0xfffc);
+        self.mem_write_16(0x0600, 0xfffc);
     }
 
     pub fn reset(&mut self) {
@@ -139,9 +139,17 @@ impl CPU {
     }
 
     pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where 
+        F: FnMut(&mut CPU),
+     {
         let ref  opcodes = *opcode::OPCODES_MAP;
     
         loop {
+            callback(self);
             let code = self.mem_read(self.pc); 
             self.pc += 1;
             let program_counter_state = self.pc;
